@@ -39,11 +39,17 @@ def parse_json(source: SourceConfig, payload: bytes | str) -> list[Item]:
 
     items: list[Item] = []
     for record in records:
+        link = _read_path(record, fields.link)
+        if not link and fields.link_template and isinstance(record, dict):
+            try:
+                link = fields.link_template.format(**record)
+            except (KeyError, IndexError, ValueError):
+                link = None
         item = make_item(
             source_name=source.name,
             base_url=source.url,
             title=_read_path(record, fields.title),
-            link=_read_path(record, fields.link),
+            link=link,
             price=_read_path(record, fields.price),
             currency=_read_path(record, fields.currency) or source.currency,
             image=_read_path(record, fields.image),

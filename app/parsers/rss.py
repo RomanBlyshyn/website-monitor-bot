@@ -1,5 +1,5 @@
 import feedparser
-from selectolax.parser import HTMLParser
+from selectolax.lexbor import LexborHTMLParser as HTMLParser
 
 from app.config import SourceConfig
 from app.models import Item

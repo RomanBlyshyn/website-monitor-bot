@@ -155,6 +155,7 @@ class Storage:
         return new_items, price_drops, baseline
 
     async def record_success(self, source_name: str) -> bool:
+        """Reset the failure streak. Returns True if a failure alert was sent before."""
         async with self._write_lock:
             async with aiosqlite.connect(self.path) as db:
                 cursor = await db.execute(
@@ -182,7 +183,10 @@ class Storage:
                 await db.commit()
         return recovered
 
-    async def record_failure(self, source_name: str, error: str) -> tuple[int, bool]:
+    async def record_failure(
+        self, source_name: str, error: str, threshold: int = 3
+    ) -> tuple[int, bool]:
+        """Count a failed check. Returns (failures in a row, alert admin now?)."""
         async with self._write_lock:
             async with aiosqlite.connect(self.path) as db:
                 await db.execute(
@@ -199,7 +203,7 @@ class Storage:
                 state = await cursor.fetchone()
                 failures = state[0] + 1
                 notified = bool(state[1])
-                should_notify = failures >= 3 and not notified
+                should_notify = failures >= threshold and not notified
                 await db.execute(
                     """
                     UPDATE source_state

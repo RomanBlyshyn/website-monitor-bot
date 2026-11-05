@@ -5,11 +5,43 @@ from datetime import datetime
 from decimal import Decimal
 
 from aiogram import Bot
+from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.models import Item, Notification, PriceDrop
 
 logger = logging.getLogger(__name__)
+
+SEND_INTERVAL_SECONDS = 1.05  # Telegram allows ~1 message/second per chat.
+
+
+def format_price(value: Decimal) -> str:
+    if value == value.to_integral_value():
+        return f"{value:,.0f}"
+    return f"{value:,.2f}"
+
+
+def format_new_listing(item: Item, now: datetime | None = None) -> str:
+    now = now or datetime.now().astimezone()
+    price = format_price(item.price) if item.price is not None else "Price not listed"
+    return (
+        f"🆕 New listing — {html.escape(item.source)}\n"
+        f"<b>{html.escape(item.title)}</b>\n"
+        f"💰 {html.escape(price)} {html.escape(item.currency)}".rstrip()
+        + f"\n🕒 {html.escape(now.strftime('%Y-%m-%d %H:%M %Z').strip())}"
+    )
+
+
+def format_price_drop(drop: PriceDrop) -> str:
+    item = drop.item
+    percent = (drop.old_price - drop.new_price) / drop.old_price * Decimal("100")
+    return (
+        f"💸 Price drop — {html.escape(item.source)}\n"
+        f"<b>{html.escape(item.title)}</b>\n"
+        f"<s>{format_price(drop.old_price)}</s> → "
+        f"<b>{format_price(drop.new_price)}</b> "
+        f"{html.escape(item.currency)} (-{percent:.0f}%)"
+    )
 
 
 class TelegramNotifier:
@@ -31,32 +63,14 @@ class TelegramNotifier:
             self._worker = None
 
     async def send_new(self, item: Item) -> None:
-        title = html.escape(item.title)
-        source = html.escape(item.source)
-        price = html.escape(str(item.price) if item.price is not None else "Price unknown")
-        currency = html.escape(item.currency)
-        time_text = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z")
-        text = (
-            f"🆕 New listing — {source}\n"
-            f"<b>{title}</b>\n"
-            f"💰 {price} {currency}\n"
-            f"🕒 {html.escape(time_text)}"
+        await self._queue.put(
+            Notification(text=format_new_listing(item), url=item.url, image=item.image)
         )
-        await self._queue.put(Notification(text=text, url=item.url, image=item.image))
 
     async def send_price_drop(self, drop: PriceDrop) -> None:
-        item = drop.item
-        percent = (
-            (drop.old_price - drop.new_price) / drop.old_price * Decimal("100")
+        await self._queue.put(
+            Notification(text=format_price_drop(drop), url=drop.item.url)
         )
-        text = (
-            f"💸 Price drop — {html.escape(item.source)}\n"
-            f"<b>{html.escape(item.title)}</b>\n"
-            f"<s>{html.escape(str(drop.old_price))}</s> → "
-            f"<b>{html.escape(str(drop.new_price))}</b> "
-            f"{html.escape(item.currency)} (-{percent:.1f}%)"
-        )
-        await self._queue.put(Notification(text=text, url=item.url))
 
     async def send_admin_message(self, text: str) -> None:
         await self._queue.put(
@@ -74,7 +88,7 @@ class TelegramNotifier:
                 if notification is None:
                     return
                 await self._send_with_retries(notification)
-                await asyncio.sleep(1.05)
+                await asyncio.sleep(SEND_INTERVAL_SECONDS)
             finally:
                 self._queue.task_done()
 
@@ -88,16 +102,14 @@ class TelegramNotifier:
                 ]
             )
 
+        use_photo = bool(notification.image) and len(notification.text) <= 1024
         for attempt in range(3):
             try:
-                if notification.image:
-                    caption = notification.text
-                    if len(caption) > 1024:
-                        caption = caption[:1021] + "..."
+                if use_photo:
                     await self.bot.send_photo(
                         chat_id=chat_id,
                         photo=notification.image,
-                        caption=caption,
+                        caption=notification.text,
                         parse_mode="HTML",
                         reply_markup=keyboard,
                     )
@@ -107,10 +119,23 @@ class TelegramNotifier:
                         text=notification.text,
                         parse_mode="HTML",
                         reply_markup=keyboard,
+                        disable_web_page_preview=True,
                     )
+                return
+            except TelegramRetryAfter as error:
+                logger.warning("Telegram rate limit hit; waiting %ss", error.retry_after)
+                await asyncio.sleep(error.retry_after)
+            except TelegramBadRequest as error:
+                if use_photo:
+                    # Telegram could not fetch/accept the image: send text instead.
+                    logger.warning("sendPhoto rejected (%s); sending text", error)
+                    use_photo = False
+                    continue
+                logger.error("Telegram rejected notification: %s", error)
                 return
             except Exception:
                 if attempt == 2:
                     logger.exception("Failed to deliver Telegram notification")
                     return
                 await asyncio.sleep(2**attempt)
+        logger.error("Gave up delivering Telegram notification to %s", chat_id)

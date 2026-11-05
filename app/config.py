@@ -1,3 +1,4 @@
+import logging
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -6,6 +7,14 @@ import yaml
 from pydantic import BaseModel, Field, PositiveInt, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+logger = logging.getLogger(__name__)
+
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (compatible; WebsiteMonitorBot/1.0; "
+    "+https://github.com/RomanBlyshyn/website-monitor-bot)"
+)
+EXAMPLE_SOURCES_PATH = Path("sources.example.yaml")
+
 
 class Settings(BaseSettings):
     BOT_TOKEN: str
@@ -13,6 +22,8 @@ class Settings(BaseSettings):
     ADMIN_CHAT_ID: int
     DB_PATH: str = "data/monitor.db"
     LOG_LEVEL: str = "INFO"
+    SOURCES_PATH: str = "sources.yaml"
+    USER_AGENT: str = DEFAULT_USER_AGENT
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -29,6 +40,12 @@ class FiltersConfig(BaseModel):
 
 
 class HtmlSelectors(BaseModel):
+    """CSS selectors relative to each item node.
+
+    Append ``::attr(name)`` to read an attribute instead of text,
+    e.g. ``h3 a::attr(title)``. Use ``:scope`` to target the item node itself.
+    """
+
     item: str
     title: str
     link: str
@@ -37,11 +54,20 @@ class HtmlSelectors(BaseModel):
 
 
 class JsonFields(BaseModel):
+    """Dot-separated paths relative to each record (``a.b.0.c``)."""
+
     title: str
-    link: str
+    link: str | None = None
+    link_template: str | None = None
     price: str | None = None
     image: str | None = None
     currency: str | None = None
+
+    @model_validator(mode="after")
+    def require_link(self) -> "JsonFields":
+        if not self.link and not self.link_template:
+            raise ValueError("JSON fields need 'link' or 'link_template'")
+        return self
 
 
 class SourceConfig(BaseModel):
@@ -54,6 +80,7 @@ class SourceConfig(BaseModel):
     item_path: str | None = None
     currency: str = ""
     use_browser: bool = False
+    respect_robots: bool = True
     filters: FiltersConfig = Field(default_factory=FiltersConfig)
 
     @model_validator(mode="after")
@@ -72,8 +99,24 @@ def get_settings() -> Settings:
     return Settings()
 
 
+def resolve_sources_path(path: str | Path) -> Path:
+    """Return ``path`` or fall back to the bundled example config."""
+    candidate = Path(path)
+    if candidate.is_file():
+        return candidate
+    if EXAMPLE_SOURCES_PATH.is_file():
+        logger.warning(
+            "%s not found; using %s. Copy it to %s to customize sources.",
+            candidate,
+            EXAMPLE_SOURCES_PATH,
+            candidate,
+        )
+        return EXAMPLE_SOURCES_PATH
+    raise FileNotFoundError(f"Sources config not found: {candidate}")
+
+
 def load_sources(path: str | Path = "sources.yaml") -> list[SourceConfig]:
-    with Path(path).open("r", encoding="utf-8") as source_file:
+    with resolve_sources_path(path).open("r", encoding="utf-8") as source_file:
         raw_config = yaml.safe_load(source_file) or {}
 
     raw_sources = raw_config.get("sources")

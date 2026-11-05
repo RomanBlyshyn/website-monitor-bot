@@ -24,8 +24,12 @@ def create_router(
     @router.message(Command("start"))
     async def start(message: Message) -> None:
         await message.answer(
-            "Website Monitor Bot is running. It tracks configured public pages "
-            "and sends alerts for new listings and price drops."
+            "👋 <b>Website Monitor Bot</b>\n"
+            f"Watching {len(sources)} sources for new listings and price drops.\n\n"
+            "/status — last check, items found, errors\n"
+            "/sources — active sources and filters\n"
+            "/pause, /resume — stop or restart monitoring",
+            parse_mode="HTML",
         )
 
     @router.message(Command("status"))
@@ -34,16 +38,17 @@ def create_router(
         lines = ["<b>Monitor status</b>"]
         for source in sources:
             state = states.get(source.name, {})
-            last_checked = state.get("last_checked") or "Not checked yet"
+            last_checked = state.get("last_checked") or "not checked yet"
             errors = state.get("consecutive_failures", 0)
             error_text = state.get("last_error")
+            icon = "🔴" if errors else "🟢"
             line = (
-                f"• <b>{html.escape(source.name)}</b>: "
-                f"{html.escape(str(last_checked))}; "
-                f"{state.get('item_count', 0)} items; failures: {errors}"
+                f"{icon} <b>{html.escape(source.name)}</b>\n"
+                f"   last check: {html.escape(str(last_checked))}\n"
+                f"   items: {state.get('item_count', 0)}; failures in a row: {errors}"
             )
             if error_text:
-                line += f"; last error: {html.escape(str(error_text))}"
+                line += f"\n   last error: {html.escape(str(error_text)[:300])}"
             lines.append(line)
         lines.append(
             f"Monitoring: {'running' if monitor_enabled.is_set() else 'paused'}"

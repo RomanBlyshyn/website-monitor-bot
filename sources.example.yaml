@@ -1,36 +1,46 @@
+# Copy to sources.yaml and adapt. Every source is checked independently.
+# Monitor only public pages and respect each site's terms and robots.txt.
+
 sources:
-  - name: Example Electronics
-    url: https://www.ebay.com/sch/i.html?_nkw=mechanical+keyboard
+  # HTML page parsed with CSS selectors (relative to each item card).
+  # books.toscrape.com is a public sandbox made for scraping practice.
+  - name: Books to Scrape
+    url: https://books.toscrape.com/catalogue/category/books/mystery_3/index.html
     type: html
-    interval_minutes: 30
-    use_browser: true
+    interval_minutes: 60
+    use_browser: false            # true = render with headless Chromium (JS sites)
     selectors:
-      item: "li.s-card"
-      title: ".s-card__title"
-      price: ".s-card__price"
-      link: "a.s-card__link"
-      image: "img.s-card__image"
-    currency: USD
+      item: article.product_pod
+      title: "h3 a::attr(title)"  # ::attr(name) reads an attribute instead of text
+      link: h3 a                  # href is used by default
+      price: p.price_color
+      image: div.image_container img
+    currency: GBP
     filters:
       include_keywords: []
-      exclude_keywords: ["parts only"]
-      min_price: 20
-      max_price: 500
+      exclude_keywords: ["sample"]
+      min_price: 10
+      max_price: 60
 
-  - name: Example Product API
-    url: https://dummyjson.com/products?limit=20
+  # JSON API: item_path points to the list, fields are paths inside each record.
+  - name: DummyJSON Laptops
+    url: https://dummyjson.com/products/category/laptops
     type: json
     interval_minutes: 45
     item_path: products
     fields:
       title: title
       price: price
-      link: url
       image: thumbnail
-      currency: currency
+      link_template: "https://dummyjson.com/products/{id}"  # when the API has no URL field
     currency: USD
     filters:
       include_keywords: []
       exclude_keywords: []
-      min_price: 10
-      max_price: 1000
+      max_price: 2500
+
+  # RSS / Atom feed: only the URL is needed.
+  - name: uv releases
+    url: https://github.com/astral-sh/uv/releases.atom
+    type: rss
+    interval_minutes: 120
