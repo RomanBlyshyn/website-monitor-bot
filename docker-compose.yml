@@ -1,6 +1,10 @@
 services:
   monitor:
-    build: .
+    build:
+      context: .
+      args:
+        # Set INSTALL_BROWSER=true in .env if any source uses `use_browser: true`.
+        INSTALL_BROWSER: ${INSTALL_BROWSER:-false}
     container_name: website-monitor
     restart: unless-stopped
     env_file:
@@ -8,5 +12,12 @@ services:
     environment:
       DB_PATH: /data/monitor.db
     volumes:
-      - ./sources.yaml:/app/sources.yaml:ro
-      - ./data:/data
+      - monitor-data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  monitor-data:
