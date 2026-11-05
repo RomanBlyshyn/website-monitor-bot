@@ -1,0 +1,36 @@
+sources:
+  - name: Example Electronics
+    url: https://www.ebay.com/sch/i.html?_nkw=mechanical+keyboard
+    type: html
+    interval_minutes: 30
+    use_browser: true
+    selectors:
+      item: "li.s-card"
+      title: ".s-card__title"
+      price: ".s-card__price"
+      link: "a.s-card__link"
+      image: "img.s-card__image"
+    currency: USD
+    filters:
+      include_keywords: []
+      exclude_keywords: ["parts only"]
+      min_price: 20
+      max_price: 500
+
+  - name: Example Product API
+    url: https://dummyjson.com/products?limit=20
+    type: json
+    interval_minutes: 45
+    item_path: products
+    fields:
+      title: title
+      price: price
+      link: url
+      image: thumbnail
+      currency: currency
+    currency: USD
+    filters:
+      include_keywords: []
+      exclude_keywords: []
+      min_price: 10
+      max_price: 1000
