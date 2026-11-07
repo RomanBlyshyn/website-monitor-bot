@@ -1,15 +1,57 @@
+import asyncio
 import html
 import logging
-import asyncio
+from datetime import datetime, timezone
 
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from app.config import SourceConfig
+from app.config import FiltersConfig, SourceConfig
 from app.storage import Storage
 
 logger = logging.getLogger(__name__)
+
+
+def format_checked(value: str | None, now: datetime | None = None) -> str:
+    """'2026-11-07T15:42:50+00:00' -> '2026-11-07 15:42 UTC (3 min ago)'."""
+    if not value:
+        return "not checked yet"
+    try:
+        checked = datetime.fromisoformat(value)
+    except ValueError:
+        return value
+    now = now or datetime.now(timezone.utc)
+    minutes = max(0, int((now - checked).total_seconds() // 60))
+    if minutes < 1:
+        ago = "just now"
+    elif minutes < 60:
+        ago = f"{minutes} min ago"
+    elif minutes < 48 * 60:
+        ago = f"{minutes // 60} h ago"
+    else:
+        ago = f"{minutes // 1440} days ago"
+    return f"{checked.astimezone(timezone.utc):%Y-%m-%d %H:%M} UTC ({ago})"
+
+
+def _number(value: float) -> str:
+    return f"{value:g}"
+
+
+def describe_filters(filters: FiltersConfig) -> list[str]:
+    parts = []
+    if filters.include_keywords:
+        parts.append("include: " + ", ".join(filters.include_keywords))
+    if filters.exclude_keywords:
+        parts.append("exclude: " + ", ".join(filters.exclude_keywords))
+    low, high = filters.min_price, filters.max_price
+    if low is not None and high is not None:
+        parts.append(f"price: {_number(low)}–{_number(high)}")
+    elif low is not None:
+        parts.append(f"price ≥ {_number(low)}")
+    elif high is not None:
+        parts.append(f"price ≤ {_number(high)}")
+    return parts
 
 
 def create_router(
@@ -38,7 +80,7 @@ def create_router(
         lines = ["<b>Monitor status</b>"]
         for source in sources:
             state = states.get(source.name, {})
-            last_checked = state.get("last_checked") or "not checked yet"
+            last_checked = format_checked(state.get("last_checked"))
             errors = state.get("consecutive_failures", 0)
             error_text = state.get("last_error")
             icon = "🔴" if errors else "🟢"
@@ -69,21 +111,11 @@ def create_router(
     async def list_sources(message: Message) -> None:
         lines = ["<b>Configured sources</b>"]
         for source in sources:
-            filters = source.filters
             details = [
-                f"interval: {source.interval_minutes} min",
-                f"type: {source.type}",
+                f"every {source.interval_minutes} min",
+                source.type.upper() + (" via browser" if source.use_browser else ""),
+                *describe_filters(source.filters),
             ]
-            if filters.include_keywords:
-                details.append(
-                    "include: " + ", ".join(filters.include_keywords)
-                )
-            if filters.exclude_keywords:
-                details.append("exclude: " + ", ".join(filters.exclude_keywords))
-            if filters.min_price is not None:
-                details.append(f"min: {filters.min_price}")
-            if filters.max_price is not None:
-                details.append(f"max: {filters.max_price}")
             lines.append(
                 f"• <b>{html.escape(source.name)}</b> — "
                 f"{html.escape('; '.join(details))}"

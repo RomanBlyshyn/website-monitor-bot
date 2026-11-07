@@ -2,7 +2,10 @@
 
 A Python bot that watches listing and product pages, RSS feeds and JSON APIs. It sends a Telegram alert when a new item appears or a price drops. Each source is one block in a YAML file, so you can add a new site without changing any code.
 
-![Telegram alerts](docs/telegram-alerts.png)
+<p>
+  <img src="docs/telegram-alerts.png" alt="New listing and price drop alerts" width="420">
+  <img src="docs/telegram-commands.png" alt="/status and /sources commands" width="420">
+</p>
 
 ## Problem → Solution → Result
 
@@ -32,7 +35,7 @@ A Python bot that watches listing and product pages, RSS feeds and JSON APIs. It
 - **Reliable:** timeouts, 3 retries with exponential backoff, alerts when a source fails and when it recovers, a rate-limited Telegram queue (~1 message per second), photo alerts that fall back to text
 - **Admin commands:** `/start`, `/status`, `/sources`, `/pause`, `/resume`. Only `ADMIN_CHAT_ID` can use them
 - **Deployment:** Docker Compose, SQLite in a named volume, logs to stdout
-- **Tested:** 33 pytest tests (parsers on a saved HTML page, filters, deduplication across restarts, price drops, failure alerts, message format)
+- **Tested:** 35 pytest tests (parsers on a saved HTML page, filters, deduplication across restarts, price drops, failure alerts, message format)
 
 ### Alert format
 
@@ -150,7 +153,7 @@ Requires [uv](https://docs.astral.sh/uv/). Python 3.12 is installed automaticall
 
 ```sh
 uv sync
-uv run pytest                     # 33 tests
+uv run pytest                     # 35 tests
 uv run python -m app.main         # run locally with .env
 uv run playwright install chromium  # only for use_browser sources
 ```
